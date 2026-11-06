@@ -1,6 +1,6 @@
 # SMSMobileAPI + Telegram
 
-Connect your own Telegram account to SMSMobileAPI and send text messages from the dashboard or an HTTPS API. This repository contains a focused API contract, a step-by-step guide, and a Python standard-library example.
+Connect your own Telegram account to SMSMobileAPI and send text messages from the dashboard or an HTTPS API. This repository contains a focused API contract and a step-by-step guide.
 
 ## What you can do
 
@@ -32,18 +32,18 @@ Base URL: `https://api.smsmobileapi.com`. Authenticate all three requests with t
 
 The complete walkthrough, curl requests, response examples, limits, and errors are in [docs/telegram.md](docs/telegram.md). The machine-readable contract is [openapi.yaml](openapi.yaml).
 
-## Python example
+## Example API request
 
-Python 3.11+; no third-party packages are needed.
+Once you have synchronized contacts and found a `contact_id`, queue one text message:
 
 ```bash
-export SMSMOBILEAPI_API_KEY='YOUR_API_KEY'
-python examples/telegram_quickstart.py contacts --query Alex
-python examples/telegram_quickstart.py send 42 'Your appointment is confirmed.'
-python examples/telegram_quickstart.py sent --message-id 123
+curl -X POST 'https://api.smsmobileapi.com/telegram/send/' \
+  -H 'X-SMSMobileAPI-Key: YOUR_API_KEY' \
+  -H 'Content-Type: application/json' \
+  -d '{"contact_id":42,"message":"Your appointment is confirmed."}'
 ```
 
-On Windows PowerShell, set the variable with `$env:SMSMOBILEAPI_API_KEY = 'YOUR_API_KEY'` before running the commands. The script sends a message **only** when you invoke its `send` command. It generates a unique idempotency key for that message; supply `--idempotency-key` to reuse the same key for a retry.
+The API returns a `message_id`. Use `GET /telegram/sent/?message_id=123` to check its status. See the [full guide](docs/telegram.md) for contact lookup, retries and response examples.
 
 ## Operational limits
 
