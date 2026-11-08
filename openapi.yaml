@@ -1,17 +1,13 @@
 openapi: 3.1.0
 info:
   title: SMSMobileAPI Telegram API
-  version: 2026-11-06
-  summary: Connect a Telegram account, find contacts, send text messages and inspect
-    sending status.
-  description: Telegram messaging through a customer's own connected account. Connect
-    by QR code and synchronize contacts in the SMSMobileAPI dashboard before sending.
+  version: 2026-11-08
+  summary: Send Telegram text and files; read new private messages and sending status.
+  description: Connect each customer's Telegram account by QR code. Message reception
+    is optional and off by default.
   contact:
     name: SMSMobileAPI Support
     url: https://smsmobileapi.com/
-  license:
-    name: MIT
-    identifier: MIT
 servers:
 - url: https://api.smsmobileapi.com
   description: Production
@@ -22,7 +18,8 @@ security:
 - ApiKeyHeader: []
 tags:
 - name: Telegram
-  description: Contact lookup, text sending and sending log.
+  description: Send text or files and read new private messages through the customer's
+    connected Telegram account.
 paths:
   /telegram/contacts/:
     get:
@@ -73,9 +70,23 @@ paths:
       tags:
       - Telegram
       operationId: sendTelegramMessage
-      summary: Queue a message to one Telegram contact
-      description: HTTP 202 means queued, not delivered. Repeating the same idempotency
-        key and payload returns the original message ID with HTTP 200.
+      summary: Queue text, an image or a document to one Telegram contact
+      description: 'Send JSON text, JSON with file_base64 and filename, or multipart/form-data
+        with a file field.
+
+        Files must be 5 MB or smaller and use a supported JPG, PNG, WebP, PDF, TXT,
+        CSV, JSON,
+
+        ZIP or Office format. Text may contain up to 4096 characters; a file caption
+        up to 1024.
+
+        HTTP 202 means queued, not delivered. Repeating the same idempotency key and
+        payload
+
+        returns the original message ID with HTTP 200. A changed payload with the
+        same key returns 409.
+
+        '
       security:
       - ApiKeyHeader: []
       requestBody:
@@ -86,19 +97,70 @@ paths:
               type: object
               required:
               - contact_id
-              - message
+              anyOf:
+              - required:
+                - message
+              - required:
+                - filename
+                - file_base64
               properties:
                 contact_id:
                   type: integer
                   minimum: 1
                 message:
                   type: string
-                  minLength: 1
                   maxLength: 4096
+                  description: Required for text-only sends; optional caption up to
+                    1024 characters when a file is attached.
+                filename:
+                  type: string
+                  maxLength: 190
+                  description: Required with file_base64.
+                file_base64:
+                  type: string
+                  contentEncoding: base64
+                  description: Base64 file bytes
+                  optionally as a data URI. Decoded size must not exceed 5 MB.: null
                 idempotency_key:
                   type: string
                   format: uuid
-                  description: Reuse this value when retrying a network timeout.
+                  description: Reuse the same lowercase UUID and identical payload
+                    when retrying a network timeout.
+            examples:
+              text:
+                value:
+                  contact_id: 42
+                  message: Your appointment is confirmed.
+                  idempotency_key: 2d40bb10-cc42-4c30-a282-93fc6dd8e161
+              image:
+                value:
+                  contact_id: 42
+                  filename: photo.png
+                  file_base64: BASE64_ENCODED_FILE
+                  message: See attached
+                  idempotency_key: 2d40bb10-cc42-4c30-a282-93fc6dd8e161
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+              - contact_id
+              - file
+              properties:
+                contact_id:
+                  type: integer
+                  minimum: 1
+                file:
+                  type: string
+                  format: binary
+                  description: One supported image or document
+                  up to 5 MB.: null
+                message:
+                  type: string
+                  maxLength: 1024
+                  description: Optional caption.
+                idempotency_key:
+                  type: string
+                  format: uuid
       responses:
         '202':
           description: Message queued for asynchronous sending.
@@ -116,14 +178,22 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Forbidden'
+        '402':
+          $ref: '#/components/responses/Forbidden'
         '403':
           $ref: '#/components/responses/Forbidden'
         '409':
+          $ref: '#/components/responses/BadRequest'
+        '413':
+          $ref: '#/components/responses/BadRequest'
+        '415':
           $ref: '#/components/responses/BadRequest'
         '422':
           $ref: '#/components/responses/BadRequest'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/BadRequest'
   /telegram/sent/:
     get:
       tags:
@@ -180,9 +250,132 @@ paths:
                 $ref: '#/components/schemas/TelegramSentResponse'
         '401':
           $ref: '#/components/responses/Forbidden'
+        '402':
+          $ref: '#/components/responses/Forbidden'
         '403':
           $ref: '#/components/responses/Forbidden'
         '409':
+          $ref: '#/components/responses/BadRequest'
+  /telegram/received/:
+    get:
+      tags:
+      - Telegram
+      operationId: listTelegramReceivedMessages
+      summary: List received private Telegram messages
+      description: 'Message reception is optional and off by default. Enable it in
+        Dashboard → Telegram
+
+        Connection before new private messages can be imported. Turning it off stops
+        future
+
+        imports; already stored messages remain available until the user clears the
+        history.
+
+        Self messages, groups, channels and messages from before the enabled period
+        are excluded.
+
+        Received image and file entries currently contain captions and metadata only;
+        their
+
+        bytes are not available for download.
+
+        '
+      security:
+      - ApiKeyHeader: []
+      parameters:
+      - name: telegram_peer_id
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+        description: Optional private-chat peer filter.
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - name: cursor
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+        description: Use paging.next_cursor for the next page of older messages.
+      responses:
+        '200':
+          description: Account-scoped received messages, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelegramReceivedResponse'
+        '401':
+          $ref: '#/components/responses/Forbidden'
+        '402':
+          $ref: '#/components/responses/Forbidden'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/BadRequest'
+  /telegram/media/:
+    get:
+      tags:
+      - Telegram
+      operationId: downloadSentTelegramAttachment
+      summary: Download a previously sent Telegram attachment
+      description: 'Use message_id with X-SMSMobileAPI-Key, or open the short-lived
+        signed download_url
+
+        returned by GET /telegram/sent/. Signed links expire after 15 minutes. Sent
+        attachments
+
+        are retained for up to 90 days. Received attachments are not downloadable
+        here.
+
+        '
+      security:
+      - ApiKeyHeader: []
+      - {}
+      parameters:
+      - name: message_id
+        in: query
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+      - name: expires
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+        description: Unix expiry timestamp from a signed download_url; use with signature
+          instead of an API key.
+      - name: signature
+        in: query
+        schema:
+          type: string
+        description: Signature from a signed download_url; use with expires instead
+          of an API key.
+      responses:
+        '200':
+          description: Binary image or document bytes.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Forbidden'
+        '402':
+          $ref: '#/components/responses/Forbidden'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/BadRequest'
+        '410':
           $ref: '#/components/responses/BadRequest'
 components:
   securitySchemes:
@@ -214,19 +407,17 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   schemas:
-    TelegramPaging:
+    ErrorResponse:
       type: object
-      required:
-      - has_more
-      - next_cursor
+      additionalProperties: true
       properties:
-        has_more:
-          type: boolean
-        next_cursor:
-          type:
-          - integer
-          - 'null'
-    TelegramContactsResponse:
+        error:
+          oneOf:
+          - type: string
+          - type: integer
+        message:
+          type: string
+    TelegramReceivedResponse:
       type: object
       required:
       - ok
@@ -241,49 +432,80 @@ components:
           items:
             type: object
             required:
-            - contact_id
-            - display_name
+            - message_id
+            - telegram_peer_id
+            - telegram_message_id
+            - telegram_sender_id
+            - sender_name
             - username
-            - source
+            - message
+            - type
+            - media
+            - received_at
+            - captured_at
             properties:
-              contact_id:
+              message_id:
                 type: integer
-              display_name:
+                description: SMSMobileAPI inbox ID used as the paging cursor.
+              telegram_peer_id:
+                type: integer
+              telegram_message_id:
+                type: integer
+              telegram_sender_id:
+                type:
+                - integer
+                - 'null'
+              sender_name:
                 type: string
               username:
-                type:
-                - string
-                - 'null'
-              source:
                 type: string
+              message:
+                type: string
+                description: Text or an attachment caption.
+              type:
+                type: string
+                enum:
+                - text
+                - image
+                - file
+              media:
+                oneOf:
+                - type: 'null'
+                - $ref: '#/components/schemas/TelegramReceivedMedia'
+              received_at:
+                type: string
+                format: date-time
+              captured_at:
+                type: string
+                format: date-time
         paging:
           $ref: '#/components/schemas/TelegramPaging'
-    TelegramSendResponse:
+    TelegramPaging:
       type: object
       required:
-      - ok
-      - message_id
-      - status
-      - idempotency_key
-      - duplicate
+      - has_more
+      - next_cursor
       properties:
-        ok:
+        has_more:
           type: boolean
-          const: true
-        message_id:
-          type: integer
-        status:
+        next_cursor:
+          type:
+          - integer
+          - 'null'
+    TelegramReceivedMedia:
+      type: object
+      required:
+      - filename
+      - mime_type
+      - download_url
+      properties:
+        filename:
           type: string
-          enum:
-          - queued
-          - sending
-          - sent
-          - error
-          - unknown
-        idempotency_key:
+        mime_type:
           type: string
-        duplicate:
-          type: boolean
+        download_url:
+          type: 'null'
+          description: Received attachment bytes are not retained in this release.
     TelegramSentResponse:
       type: object
       required:
@@ -302,6 +524,8 @@ components:
             - message_id
             - contact_id
             - message
+            - type
+            - media
             - status
             - attempts
             - queued_at
@@ -320,6 +544,16 @@ components:
                 - 'null'
               message:
                 type: string
+              type:
+                type: string
+                enum:
+                - text
+                - image
+                - file
+              media:
+                oneOf:
+                - type: 'null'
+                - $ref: '#/components/schemas/TelegramSentMedia'
               status:
                 type: string
                 enum:
@@ -352,14 +586,96 @@ components:
                 format: date-time
         paging:
           $ref: '#/components/schemas/TelegramPaging'
-    ErrorResponse:
+    TelegramSentMedia:
       type: object
-      additionalProperties: true
+      required:
+      - type
+      - filename
+      - mime_type
+      - size_bytes
+      - download_url
+      - available_until
       properties:
-        error:
-          oneOf:
-          - type: string
-          - type: integer
-        message:
+        type:
           type: string
+          enum:
+          - image
+          - document
+        filename:
+          type: string
+        mime_type:
+          type: string
+        size_bytes:
+          type: integer
+          minimum: 0
+        download_url:
+          type:
+          - string
+          - 'null'
+          format: uri
+          description: Signed link valid for 15 minutes
+          or null when unavailable.: null
+        available_until:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    TelegramSendResponse:
+      type: object
+      required:
+      - ok
+      - message_id
+      - status
+      - idempotency_key
+      - duplicate
+      properties:
+        ok:
+          type: boolean
+          const: true
+        message_id:
+          type: integer
+        status:
+          type: string
+          enum:
+          - queued
+          - sending
+          - sent
+          - error
+          - unknown
+        idempotency_key:
+          type: string
+        duplicate:
+          type: boolean
+    TelegramContactsResponse:
+      type: object
+      required:
+      - ok
+      - data
+      - paging
+      properties:
+        ok:
+          type: boolean
+          const: true
+        data:
+          type: array
+          items:
+            type: object
+            required:
+            - contact_id
+            - display_name
+            - username
+            - source
+            properties:
+              contact_id:
+                type: integer
+              display_name:
+                type: string
+              username:
+                type:
+                - string
+                - 'null'
+              source:
+                type: string
+        paging:
+          $ref: '#/components/schemas/TelegramPaging'
 
