@@ -9,6 +9,7 @@ Connect your own Telegram account to SMSMobileAPI, send text, photos and files f
 - Queue text, images or documents to a contact through the dashboard or `POST /telegram/send/`.
 - Inspect sending status, errors and attachment metadata through `GET /telegram/sent/`, and download sent files through `GET /telegram/media/`.
 - Optionally enable message reception and read new private messages through `GET /telegram/received/`.
+- Subscribe a signed [Webhook V2 destination](https://dashboard.smsmobileapi.com/webhook-v2/) to queued, sent, failed, uncertain or received Telegram events.
 - Keep requests scoped to each customer's connected account and control endpoint access from **My API Key**.
 
 Telegram reception is off by default and can be changed at any time. Paused messages are not imported later. Received file metadata is available, but received file downloads, recipient delivery receipts and read receipts are not exposed.
