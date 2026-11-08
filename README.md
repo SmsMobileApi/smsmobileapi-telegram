@@ -1,16 +1,17 @@
 # SMSMobileAPI + Telegram
 
-Connect your own Telegram account to SMSMobileAPI and send text messages from the dashboard or an HTTPS API. This repository contains a focused API contract and a step-by-step guide.
+Connect your own Telegram account to SMSMobileAPI, send text, photos and files from the dashboard or HTTPS API, and read new private messages when you enable reception. This repository contains a focused API contract and a step-by-step guide.
 
 ## What you can do
 
 - Connect one Telegram account per SMSMobileAPI account by scanning a QR code in the Telegram mobile app.
 - Synchronize contacts and saved `@username` entries, then search them by name or username.
-- Queue a text message to a contact through the dashboard or `POST /telegram/send/`.
-- Inspect the sending status and errors through `GET /telegram/sent/`.
+- Queue text, images or documents to a contact through the dashboard or `POST /telegram/send/`.
+- Inspect sending status, errors and attachment metadata through `GET /telegram/sent/`, and download sent files through `GET /telegram/media/`.
+- Optionally enable message reception and read new private messages through `GET /telegram/received/`.
 - Keep requests scoped to each customer's connected account and control endpoint access from **My API Key**.
 
-Telegram receiving, media sending, recipient delivery receipts, and read receipts are not exposed by these endpoints today.
+Telegram reception is off by default and can be changed at any time. Paused messages are not imported later. Received file metadata is available, but received file downloads, recipient delivery receipts and read receipts are not exposed.
 
 ## Start in five steps
 
@@ -25,16 +26,18 @@ Telegram receiving, media sending, recipient delivery receipts, and read receipt
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
 | GET | `/telegram/contacts/` | Search and page through synchronized contacts |
-| POST | `/telegram/send/` | Queue one text message to a `contact_id` |
+| POST | `/telegram/send/` | Queue text, an image or a document to a `contact_id` |
 | GET | `/telegram/sent/` | Check queued, sending, sent, error or unknown status |
+| GET | `/telegram/received/` | Read new private messages when reception is enabled |
+| GET | `/telegram/media/` | Download a sent attachment |
 
-Base URL: `https://api.smsmobileapi.com`. Authenticate all three requests with the `X-SMSMobileAPI-Key: YOUR_API_KEY` header. A successful HTTP 202 send response means **queued**. It does not mean recipient delivery.
+Base URL: `https://api.smsmobileapi.com`. Authenticate all five requests with the `X-SMSMobileAPI-Key: YOUR_API_KEY` header. A successful HTTP 202 send response means **queued**. It does not mean recipient delivery.
 
 The complete walkthrough, curl requests, response examples, limits, and errors are in [docs/telegram.md](docs/telegram.md). The machine-readable contract is [openapi.yaml](openapi.yaml).
 
 ## Example API request
 
-Once you have synchronized contacts and found a `contact_id`, queue one text message:
+Once you have synchronized contacts and found a `contact_id`, queue one text message (or attach a file as shown in the full guide):
 
 ```bash
 curl -X POST 'https://api.smsmobileapi.com/telegram/send/' \
